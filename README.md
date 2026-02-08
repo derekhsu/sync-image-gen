@@ -66,7 +66,14 @@ uvx --from . sync-image-gen
 | `-h, --help` | 顯示說明訊息 | - |
 | `--watch-dir` | 指定監視目錄 | `./images` |
 | `--output-dir` | 指定處理後圖片儲存目錄 | `./processed` |
+| `--env-file` | 指定 `.env` 檔案路徑 | (自動搜尋) |
 | `-t, --test` | 啟用測試模式（不呼叫 Gemini API） | `False` |
+
+### 配置搜尋優先順序
+程式會依序尋找並載入設定：
+1. `--env-file` 指定的路徑。
+2. 目前執行指令目錄下的 `.env`。
+3. 使用者家目錄下的 `~/.sync-image-gen.env` (適合放 API Key)。
 
 ## ⌨️ 快捷鍵
 
