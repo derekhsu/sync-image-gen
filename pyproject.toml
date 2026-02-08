@@ -1,8 +1,13 @@
 [project]
 name = "sync-image-gen"
-version = "0.1.0"
-description = "Watch directory, process with Gemini, and display full-screen"
+version = "0.1.1"
+description = "Sync directory monitor with Nano Banana Pro (Gemini) image processing and full-screen display"
 readme = "README.md"
+authors = [
+    { name = "Derek Hsu" }
+]
+license = { text = "MIT" }
+keywords = ["gemini", "nano-banana", "image-processing", "directory-monitor", "watchdog"]
 requires-python = ">=3.10"
 dependencies = [
     "watchdog>=4.0.0",
@@ -10,6 +15,9 @@ dependencies = [
     "pillow>=10.0.0",
     "python-dotenv>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/derekhsu/sync-image-gen"
 
 [project.scripts]
 sync-image-gen = "sync_image_gen:main"

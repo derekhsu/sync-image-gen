@@ -4,6 +4,8 @@ import threading
 import tkinter as tk
 import shutil
 import argparse
+import base64
+from io import BytesIO
 from pathlib import Path
 from PIL import Image, ImageTk
 from watchdog.observers import Observer
@@ -11,8 +13,6 @@ from watchdog.events import FileSystemEventHandler
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-
-load_dotenv()
 
 class ImageHandler(FileSystemEventHandler):
     def __init__(self, callback):
@@ -24,13 +24,16 @@ class ImageHandler(FileSystemEventHandler):
             self.callback(event.src_path)
 
 class App:
-    def __init__(self, test_mode=False):
+    def __init__(self, test_mode=False, env_file=None):
         self.root = tk.Tk()
         self.root.title("Sync Image Viewer")
         self.root.configure(background='black')
         self.test_mode = test_mode
+        self.env_file = env_file
         
-        # 初始狀態隱藏視窗
+        # 初始載入環境變數
+        self.load_config()
+        
         self.root.withdraw()
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
         self.root.bind("<Escape>", lambda e: self.hide_window())
@@ -40,14 +43,50 @@ class App:
         
         self.current_photo = None
         
-        # 初始化 Gemini Client
+        self.init_client()
+
+    def init_client(self):
+        """初始化或重新初始化 Gemini Client"""
         api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
             self.client = genai.Client(api_key=api_key)
         else:
             self.client = None
-            if not test_mode:
-                print("警告: 找不到 GOOGLE_API_KEY，將無法進行圖片轉換。")
+            if not self.test_mode:
+                print("⚠️ 警告: 尚未設定 GOOGLE_API_KEY。")
+
+    def load_config(self):
+        """根據指定路徑或預設路徑載入 .env"""
+        loaded = False
+        
+        # 1. 優先使用手動指定的路徑
+        if self.env_file:
+            env_path = Path(self.env_file).resolve()
+            if env_path.exists():
+                load_dotenv(str(env_path), override=True)
+                print(f"✅ 已載入指定設定檔: {env_path}")
+                loaded = True
+            else:
+                print(f"❌ 找不到指定的設定檔: {env_path}")
+
+        # 2. 嘗試目前工作目錄下的 .env
+        if not loaded:
+            cwd_env = Path.cwd() / ".env"
+            if cwd_env.exists():
+                load_dotenv(str(cwd_env), override=True)
+                print(f"✅ 已載入目前目錄設定: {cwd_env}")
+                loaded = True
+
+        # 3. 嘗試使用者家目錄下的隱藏設定檔
+        if not os.getenv("GOOGLE_API_KEY") and not loaded:
+            home_env = Path.home() / ".sync-image-gen.env"
+            if home_env.exists():
+                load_dotenv(str(home_env), override=True)
+                print(f"✅ 已載入全域設定: {home_env}")
+                loaded = True
+
+        if not loaded and not self.test_mode and not os.getenv("GOOGLE_API_KEY"):
+            print("💡 提示: 在目前目錄建立 .env 檔案或使用 --env-file 指定路徑。")
 
     def hide_window(self):
         self.root.attributes("-fullscreen", False)
@@ -75,68 +114,56 @@ class App:
             print(f"顯示圖片失敗: {e}")
 
     def call_gemini_api(self, image_path, target_path):
-        """呼叫 Gemini API 進行圖片轉換"""
-        # 強制重新讀取 .env 以取得最新 Prompt
-        load_dotenv(override=True)
+        """呼叫 Nano Banana Pro 進行圖片轉換"""
+        self.load_config() # 支援動態更新 Prompt
         
-        if not self.client:
-            print("錯誤: Gemini Client 未初始化 (缺少 API Key)")
+        if not hasattr(self, 'client') or self.client is None:
+            self.init_client()
+            
+        if self.client is None:
             return False
 
-        # 預設使用 Nano Banana Pro (Gemini 3 Pro Image)
         model_name = os.getenv("GEMINI_MODEL", "gemini-3-pro-image-preview")
         prompt = os.getenv("GEMINI_PROMPT", "Transform this image with a creative style.")
         
-        print(f"正在呼叫模型: {model_name}")
-        print(f"執行 Prompt: {prompt}")
+        print(f"🚀 使用模型: {model_name}")
+        print(f"📝 Prompt: {prompt}")
         
         try:
-            # 加入重試機制讀取圖片，防止檔案還在寫入中
             raw_img = None
-            for i in range(5):
+            for _ in range(5):
                 try:
                     raw_img = Image.open(image_path)
-                    raw_img.load() # 嘗試載入以確保檔案完整
+                    raw_img.load()
                     break
-                except Exception:
+                except:
                     time.sleep(0.5)
             
             if not raw_img:
-                print(f"錯誤: 無法讀取圖片檔案 {image_path}")
                 return False
-            
-            # 使用 Gemini 進行風格轉換
+
             response = self.client.models.generate_content(
                 model=model_name,
-                contents=[
-                    prompt,
-                    raw_img
-                ],
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                )
+                contents=[prompt, raw_img],
+                config=types.GenerateContentConfig(response_modalities=["IMAGE"])
             )
             
-            # 尋找輸出中的圖片部分
-            generated_img = None
-            if response.parts:
-                for part in response.parts:
+            generated_img_data = None
+            if response.candidates:
+                for part in response.candidates[0].content.parts:
                     if part.inline_data:
-                        generated_img = part.as_image()
+                        generated_img_data = part.inline_data.data
                         break
             
-            if generated_img:
-                generated_img.save(target_path)
-                print(f"Gemini 處理完成: {target_path}")
+            if generated_img_data:
+                if isinstance(generated_img_data, str):
+                    generated_img_data = base64.b64decode(generated_img_data)
+                with open(target_path, "wb") as f:
+                    f.write(generated_img_data)
                 return True
-            else:
-                print(f"Gemini 未回傳圖片數據。")
-                if response.text:
-                    print(f"回傳文字內容: {response.text}")
-                return False
-                
+            return False
         except Exception as e:
-            print(f"Gemini API 呼叫失敗: {e}")
+            print(f"API 錯誤: {e}")
             return False
 
     def process_and_show(self, image_path):
@@ -144,19 +171,16 @@ class App:
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         target_path = Path(output_dir) / Path(image_path).name
 
-        # 確保檔案已經寫入完成
         time.sleep(0.5)
 
         if self.test_mode:
-            print(f"[測試模式] 複製圖片中: {image_path}")
-            time.sleep(0.5)
+            print(f"[測試模式] 顯示圖片")
             shutil.copy2(image_path, target_path)
             self.root.after(0, self.display_image, str(target_path))
         else:
             def run_task():
                 success = self.call_gemini_api(image_path, target_path)
                 if not success:
-                    print("改用原始圖片顯示...")
                     shutil.copy2(image_path, target_path)
                 self.root.after(0, self.display_image, str(target_path))
             
@@ -171,7 +195,7 @@ class App:
         observer.schedule(event_handler, watch_dir, recursive=False)
         observer.start()
         
-        print(f"正在監視目錄: {watch_dir}")
+        print(f"🔍 監控中: {watch_dir}")
         try:
             self.root.mainloop()
         finally:
@@ -179,19 +203,27 @@ class App:
             observer.join()
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Sync Image Gen: 監視目錄、Gemini 圖片處理並全螢幕展示",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument("--watch-dir", type=str, default=os.getenv("WATCH_DIRECTORY", "./images"))
-    parser.add_argument("--output-dir", type=str, default=os.getenv("OUTPUT_DIRECTORY", "./processed"))
-    parser.add_argument("-t", "--test", action="store_true")
+    parser = argparse.ArgumentParser(description="Sync Image Gen (Nano Banana Pro)")
+    parser.add_argument("--watch-dir", type=str, help="監視目錄")
+    parser.add_argument("--output-dir", type=str, help="輸出目錄")
+    parser.add_argument("--env-file", type=str, help="指定 .env 檔案路徑")
+    parser.add_argument("-t", "--test", action="store_true", help="測試模式")
     
     args = parser.parse_args()
-    os.environ["WATCH_DIRECTORY"] = args.watch_dir
-    os.environ["OUTPUT_DIRECTORY"] = args.output_dir
     
-    app = App(test_mode=args.test)
+    app = App(test_mode=args.test, env_file=args.env_file)
+    
+    # 命令列參數優先權最高
+    if args.watch_dir:
+        os.environ["WATCH_DIRECTORY"] = args.watch_dir
+    elif not os.environ.get("WATCH_DIRECTORY"):
+        os.environ["WATCH_DIRECTORY"] = "./images"
+        
+    if args.output_dir:
+        os.environ["OUTPUT_DIRECTORY"] = args.output_dir
+    elif not os.environ.get("OUTPUT_DIRECTORY"):
+        os.environ["OUTPUT_DIRECTORY"] = "./processed"
+    
     app.run()
 
 if __name__ == "__main__":
