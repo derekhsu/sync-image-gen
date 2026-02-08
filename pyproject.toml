@@ -1,0 +1,19 @@
+[project]
+name = "sync-image-gen"
+version = "0.1.0"
+description = "Watch directory, process with Gemini, and display full-screen"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "watchdog>=4.0.0",
+    "google-genai>=0.1.0",
+    "pillow>=10.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+sync-image-gen = "sync_image_gen:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
