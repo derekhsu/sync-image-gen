@@ -13,11 +13,20 @@
 ## 🚀 快速開始
 
 ### 1. 安裝環境
-本專案建議使用 [uv](https://github.com/astral-sh/uv) 進行管理：
+本專案已發佈至 PyPI，您可以選擇以下任一方式安裝：
 
+**使用 uv (推薦)：**
 ```bash
-# 安裝依賴並建立虛擬環境
-uv sync
+# 直接執行（免安裝）
+uvx sync-image-gen
+
+# 或安裝到全域工具
+uv tool install sync-image-gen
+```
+
+**使用 pip：**
+```bash
+pip install sync-image-gen
 ```
 
 **Ubuntu 使用者注意：**
@@ -42,19 +51,19 @@ cp .env.example .env
 
 ### 3. 執行程式
 
-**開發模式執行：**
+**直接執行：**
 ```bash
-uv run sync-image-gen
+sync-image-gen
 ```
 
 **測試模式（僅複製不呼叫 API）：**
 ```bash
-uv run sync-image-gen -t
+sync-image-gen -t
 ```
 
-**使用 uvx 執行：**
+**使用 uvx 執行（最推薦，保證最新版）：**
 ```bash
-uvx --from . sync-image-gen
+uvx --refresh sync-image-gen
 ```
 
 ## 🛠️ 命令列參數 (CLI Arguments)
